@@ -1,0 +1,864 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CaptionForge — Auto-Captions for Reels, Shorts & TikTok (100% In-Browser)</title>
+<meta name="description" content="Generate, style and burn-in captions for vertical videos entirely in your browser. No uploads, no servers, no API keys.">
+
+<!-- Fonts: Anton (bold display), Comic Neue, Courier Prime, Space Grotesk (UI) -->
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Comic+Neue:wght@700&family=Courier+Prime:wght@700&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+<!-- Icons + confetti -->
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
+
+<style>
+/* ============ DESIGN TOKENS ============ */
+:root{
+  --bg:#0c0c0e; --panel:#141417; --panel2:#1a1a1f; --line:#26262b;
+  --text:#f2f1ec; --muted:#8b8b93; --accent:#ffc53d; --accent-ink:#1a1204;
+  --danger:#ff5c5c; --ok:#57d98a; --radius:14px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',sans-serif;min-height:100vh}
+button{font-family:inherit;cursor:pointer;border:none}
+input,select,textarea{font-family:inherit;color:var(--text);background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:7px 10px;font-size:14px}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-offset:1px}
+input[type=color]{padding:2px;width:42px;height:34px;cursor:pointer}
+input[type=range]{accent-color:var(--accent);padding:0}
+textarea{width:100%;resize:vertical;line-height:1.35}
+::selection{background:var(--accent);color:var(--accent-ink)}
+
+/* ============ HEADER ============ */
+header{border-bottom:1px solid var(--line);padding:18px 28px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px}
+.logo{font-family:Anton;font-size:26px;letter-spacing:2px;text-transform:uppercase}
+.logo em{font-style:normal;color:var(--accent)}
+.logo small{display:block;font-family:'Space Grotesk';font-size:11px;letter-spacing:3px;color:var(--muted);text-transform:uppercase}
+.privacy-badge{display:flex;align-items:center;gap:8px;background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:8px 16px;font-size:12.5px;color:var(--ok);font-weight:500}
+.privacy-badge svg{width:16px;height:16px}
+
+/* ============ LAYOUT ============ */
+main{max-width:1280px;margin:0 auto;padding:28px;display:grid;grid-template-columns:minmax(320px,1fr) minmax(360px,1.1fr);gap:26px;align-items:start}
+@media(max-width:960px){main{grid-template-columns:1fr}}
+.stage{position:sticky;top:20px}
+@media(max-width:960px){.stage{position:static}}
+section{margin-bottom:26px}
+.step-head{display:flex;align-items:baseline;gap:12px;margin-bottom:14px}
+.step-num{font-family:Anton;font-size:15px;color:var(--accent);border:1.5px solid var(--accent);border-radius:6px;padding:1px 8px}
+.step-head h2{font-size:16px;text-transform:uppercase;letter-spacing:1.5px;font-weight:700}
+.step-head .hint{font-size:12px;color:var(--muted)}
+
+/* ============ UPLOAD ============ */
+.dropzone{border:2px dashed var(--line);border-radius:var(--radius);background:var(--panel);padding:38px 22px;text-align:center;transition:.2s;cursor:pointer}
+.dropzone:hover,.dropzone.drag{border-color:var(--accent);background:#181712}
+.dropzone svg{width:36px;height:36px;color:var(--accent);margin-bottom:10px}
+.dropzone p{font-weight:700;margin-bottom:4px}
+.dropzone span{font-size:12.5px;color:var(--muted)}
+.file-chip{display:none;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:12px 16px;font-size:14px;margin-top:12px}
+.file-chip svg{width:18px;height:18px;color:var(--accent)}
+.file-chip .meta{color:var(--muted);font-size:12px}
+.warn-note{display:none;margin-top:10px;font-size:12.5px;color:var(--accent)}
+
+/* ============ PLAYER ============ */
+.player-shell{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:14px}
+.aspect-toggle{display:flex;gap:8px;margin-bottom:12px}
+.aspect-toggle button{flex:1;padding:8px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;color:var(--muted);font-weight:700;font-size:13px;transition:.15s}
+.aspect-toggle button.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.canvas-frame{display:flex;justify-content:center;background:#000;border-radius:10px;overflow:hidden}
+#previewCanvas{display:block;max-width:100%;height:auto}
+.controls{display:flex;align-items:center;gap:12px;margin-top:12px}
+.controls .icon-btn{width:40px;height:40px;border-radius:50%;background:var(--accent);color:var(--accent-ink);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.controls .icon-btn svg{width:18px;height:18px}
+.controls input[type=range]{flex:1}
+.time-display{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums;flex-shrink:0}
+
+/* ============ BUTTONS ============ */
+.btn{display:inline-flex;align-items:center;gap:8px;padding:11px 18px;border-radius:10px;font-weight:700;font-size:14px;transition:.15s}
+.btn svg{width:16px;height:16px}
+.btn-primary{background:var(--accent);color:var(--accent-ink)}
+.btn-primary:hover{filter:brightness(1.08)}
+.btn-primary:disabled{opacity:.4;cursor:not-allowed;filter:none}
+.btn-ghost{background:var(--panel2);border:1px solid var(--line);color:var(--text)}
+.btn-ghost:hover{border-color:var(--accent)}
+.btn-rec{background:var(--danger);color:#fff}
+.btn-rec:hover{filter:brightness(1.1)}
+
+/* ============ TRANSCRIBE ============ */
+.sr-fallback{display:none;background:#2a1d1d;border:1px solid #6b3030;color:#ffb3b3;border-radius:10px;padding:14px;font-size:13.5px;margin-bottom:12px}
+.audio-help{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px;font-size:13px;color:var(--muted);margin-bottom:14px;line-height:1.6}
+.audio-help b{color:var(--text)}
+.audio-help ol{margin:8px 0 0 18px}
+.transcribe-row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.live-status{margin-top:12px;font-size:13px;min-height:20px;color:var(--ok);font-style:italic}
+.rec-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--danger);margin-right:6px;animation:blink 1s infinite}
+@keyframes blink{50%{opacity:.2}}
+
+/* ============ EDITOR ============ */
+.sub-list{display:flex;flex-direction:column;gap:8px;max-height:420px;overflow-y:auto;padding-right:4px}
+.sub-row{display:grid;grid-template-columns:auto auto 1fr auto auto;gap:8px;align-items:start;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px}
+.sub-row:hover{border-color:#3a3a42}
+.sub-row .t{width:74px;font-size:12.5px;font-variant-numeric:tabular-nums;cursor:pointer;color:var(--accent);background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:6px 4px;text-align:center}
+.sub-row textarea{font-size:13.5px;min-height:38px}
+.sub-row .mini{width:32px;height:32px;border-radius:8px;background:var(--panel2);border:1px solid var(--line);color:var(--muted);display:flex;align-items:center;justify-content:center}
+.sub-row .mini:hover{color:var(--accent);border-color:var(--accent)}
+.sub-row .mini.del:hover{color:var(--danger);border-color:var(--danger)}
+.sub-row .mini svg{width:14px;height:14px}
+.editor-foot{margin-top:12px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.count-note{font-size:12px;color:var(--muted)}
+.empty-list{padding:24px;text-align:center;color:var(--muted);font-size:13px;border:1px dashed var(--line);border-radius:10px}
+
+/* ============ STYLE STUDIO ============ */
+.studio{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px}
+.presets{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
+.presets button{padding:8px 14px;border-radius:999px;background:var(--panel2);border:1px solid var(--line);color:var(--muted);font-size:12.5px;font-weight:700}
+.presets button:hover{border-color:var(--accent);color:var(--text)}
+.field-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.field{display:flex;flex-direction:column;gap:5px}
+.field label{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);font-weight:700}
+.field .row{display:flex;align-items:center;gap:8px}
+.field select{width:100%}
+.field-wide{grid-column:1/-1}
+.check{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text);cursor:pointer}
+.check input{accent-color:var(--accent);width:15px;height:15px}
+.val{font-size:11px;color:var(--accent);font-variant-numeric:tabular-nums}
+
+/* ============ EXPORT ============ */
+.export-bar{display:flex;gap:10px;flex-wrap:wrap}
+.progress-wrap{display:none;margin-top:14px}
+.progress-label{font-size:12.5px;color:var(--muted);margin-bottom:6px}
+.progress-track{height:8px;background:var(--panel2);border-radius:99px;overflow:hidden}
+.progress-fill{height:100%;width:0;background:var(--accent);border-radius:99px;transition:width .2s}
+
+/* ============ AD LOCK MODAL ============ */
+.modal-overlay{position:fixed;inset:0;background:rgba(5,5,7,.82);backdrop-filter:blur(4px);display:none;align-items:center;justify-content:center;z-index:100;padding:20px}
+.modal-overlay.show{display:flex}
+.modal{background:var(--panel);border:1px solid var(--line);border-radius:18px;max-width:460px;width:100%;padding:28px;position:relative;text-align:center}
+.modal h3{font-family:Anton;font-size:22px;letter-spacing:1px;margin-bottom:6px}
+.modal .sub{font-size:13px;color:var(--muted);margin-bottom:18px}
+.count-num{font-family:Anton;font-size:58px;color:var(--accent);line-height:1}
+.count-num small{font-size:16px;color:var(--muted);font-family:'Space Grotesk'}
+.ad-box{margin:18px 0;border:1px dashed var(--line);border-radius:10px;background:var(--panel2);padding:34px 16px;font-size:12px;color:var(--muted);letter-spacing:.5px}
+.prep{display:flex;align-items:center;justify-content:center;gap:10px;font-size:12.5px;color:var(--muted)}
+.spinner{width:16px;height:16px;border:2px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.modal-close{position:absolute;top:14px;right:14px;width:32px;height:32px;border-radius:8px;background:var(--panel2);border:1px solid var(--line);color:var(--muted);display:flex;align-items:center;justify-content:center}
+.modal-close svg{width:16px;height:16px}
+.modal-close:disabled{opacity:.3;cursor:not-allowed}
+.modal-close:not(:disabled):hover{color:var(--danger);border-color:var(--danger)}
+
+/* ============ TOAST ============ */
+#toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:12px 20px;font-size:13.5px;opacity:0;pointer-events:none;transition:.25s;z-index:200;max-width:90vw}
+#toast.show{opacity:1;transform:translateX(-50%)}
+#toast.err{border-color:var(--danger);color:#ffb3b3}
+
+footer{text-align:center;padding:26px;font-size:12px;color:var(--muted);border-top:1px solid var(--line)}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">Caption<em>Forge</em><small>Reels · Shorts · TikTok Captions</small></div>
+  <div class="privacy-badge"><i data-lucide="lock"></i> 100% Private — Your videos never touch any server. Everything is processed directly on your device.</div>
+</header>
+
+<main>
+  <!-- ================= LEFT: STAGE ================= -->
+  <div class="stage">
+    <section>
+      <div class="step-head"><span class="step-num">01</span><h2>Upload Video</h2><span class="hint">MP4 · WebM · MOV — ideally 60–90s</span></div>
+      <div class="dropzone" id="dropzone">
+        <i data-lucide="film"></i>
+        <p>Drag & drop your video here</p>
+        <span>or click to browse — nothing is uploaded anywhere</span>
+      </div>
+      <input type="file" id="fileInput" accept="video/mp4,video/webm,video/quicktime,video/*" hidden>
+      <div class="file-chip" id="fileChip"><i data-lucide="clapperboard"></i><div><div id="fileName"></div><div class="meta" id="fileMeta"></div></div></div>
+      <div class="warn-note" id="longWarn">⚠ This video is longer than 95s — captions may take a while to transcribe & render.</div>
+    </section>
+
+    <section>
+      <div class="step-head"><span class="step-num">02</span><h2>Preview</h2><span class="hint">WYSIWYG — what you see is exactly what gets burned in</span></div>
+      <div class="player-shell">
+        <div class="aspect-toggle">
+          <button id="aspectV" class="on">9:16 Reels / Shorts</button>
+          <button id="aspectH">16:9 Landscape</button>
+        </div>
+        <div class="canvas-frame"><canvas id="previewCanvas" width="540" height="960"></canvas></div>
+        <div class="controls">
+          <button class="icon-btn" id="playBtn" disabled><i data-lucide="play"></i></button>
+          <input type="range" id="seekBar" min="0" max="100" value="0" step="0.05" disabled>
+          <span class="time-display" id="timeDisplay">0:00 / 0:00</span>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- ================= RIGHT: WORKSPACE ================= -->
+  <div>
+    <section>
+      <div class="step-head"><span class="step-num">03</span><h2>Auto Transcribe</h2><span class="hint">Web Speech API — free, no keys</span></div>
+      <div class="sr-fallback" id="srFallback"><b>Speech recognition isn't available in this browser.</b> Please use <b>Google Chrome</b> or <b>Microsoft Edge</b> (desktop or Android) for automatic transcription. You can still add captions manually below.</div>
+      <div class="audio-help">
+        <b>How to capture your video's audio (zero external noise):</b>
+        <ol>
+          <li>Click <b>Start Transcription</b> — when the browser asks, choose <b>"This Tab"</b> and enable <b>"Share tab audio"</b>. This pipes the video's own audio into your system output.</li>
+          <li>The recognition engine listens through your default microphone, so keep speakers on at comfortable volume (or use a headset's loopback / "Stereo Mix" input for a noise-free feed).</li>
+          <li>Press <b>Play</b> — live phrases appear with real timestamps as the video plays.</li>
+        </ol>
+      </div>
+      <div class="transcribe-row">
+        <select id="langSelect">
+          <option value="en-US">English (US)</option>
+          <option value="en-GB">English (UK)</option>
+          <option value="en-IN">Hinglish / Indian English</option>
+          <option value="hi-IN">हिन्दी (Hindi)</option>
+          <option value="es-ES">Español</option>
+          <option value="fr-FR">Français</option>
+          <option value="de-DE">Deutsch</option>
+          <option value="pt-BR">Português (BR)</option>
+        </select>
+        <button class="btn btn-rec" id="recBtn" disabled><i data-lucide="mic"></i><span>Start Transcription</span></button>
+      </div>
+      <div class="live-status" id="liveStatus"></div>
+    </section>
+
+    <section>
+      <div class="step-head"><span class="step-num">04</span><h2>Subtitle Editor</h2><span class="hint">Click a timestamp to jump the video there</span></div>
+      <div class="sub-list" id="subList"></div>
+      <div class="editor-foot">
+        <button class="btn btn-ghost" id="addRowBtn" disabled><i data-lucide="plus"></i>Add caption at playhead</button>
+        <span class="count-note" id="subCount"></span>
+      </div>
+    </section>
+
+    <section>
+      <div class="step-head"><span class="step-num">05</span><h2>Caption Style Studio</h2><span class="hint">Updates live on the preview</span></div>
+      <div class="studio">
+        <div class="presets">
+          <button data-preset="classic">Classic Shorts</button>
+          <button data-preset="neon">Neon Glow</button>
+          <button data-preset="karaoke">Karaoke Pop</button>
+        </div>
+        <div class="field-grid">
+          <div class="field"><label>Font Family</label>
+            <select id="stFont">
+              <option value="Anton">Modern Bold Sans (Anton)</option>
+              <option value="Impact">Impact</option>
+              <option value="Comic Neue">Comic</option>
+              <option value="Courier Prime">Typewriter</option>
+              <option value="Space Grotesk">Clean Grotesk</option>
+            </select>
+          </div>
+          <div class="field"><label>Font Size <span class="val" id="stSizeVal"></span></label>
+            <input type="range" id="stSize" min="30" max="110" value="58">
+          </div>
+          <div class="field"><label>Text Color</label><div class="row"><input type="color" id="stText" value="#ffffff"><span id="stTextHex" class="val"></span></div></div>
+          <div class="field"><label>Highlight Color</label><div class="row"><input type="color" id="stHighlight" value="#ffc53d"><span id="stHighlightHex" class="val"></span></div></div>
+          <div class="field"><label>Outline Width <span class="val" id="stOutlineVal"></span></label>
+            <input type="range" id="stOutline" min="0" max="16" value="8">
+          </div>
+          <div class="field"><label>Outline Color</label><div class="row"><input type="color" id="stOutlineColor" value="#000000"><span id="stOutlineColorHex" class="val"></span></div></div>
+          <div class="field"><label>Background Box</label>
+            <div class="row"><input type="color" id="stBg" value="#000000"><label class="check" style="margin-top:2px"><input type="checkbox" id="stBgOn"> Enable</label></div>
+          </div>
+          <div class="field"><label>Position</label>
+            <select id="stPos"><option value="bottom">Bottom</option><option value="middle">Middle</option><option value="top">Top</option></select>
+          </div>
+          <div class="field field-wide"><label>Fine Y-Offset <span class="val" id="stOffsetVal"></span></label>
+            <input type="range" id="stOffset" min="-200" max="200" value="0">
+          </div>
+          <div class="field field-wide"><div class="row" style="gap:24px">
+            <label class="check"><input type="checkbox" id="stUpper" checked> UPPERCASE text</label>
+            <label class="check"><input type="checkbox" id="stKaraoke"> Word-by-word highlight</label>
+            <label class="check"><input type="checkbox" id="stGlow"> Glow</label>
+          </div></div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="step-head"><span class="step-num">06</span><h2>Export</h2><span class="hint">SRT subtitle file or hardcoded video</span></div>
+      <div class="export-bar">
+        <button class="btn btn-ghost" id="srtBtn" disabled><i data-lucide="file-text"></i>Download .SRT</button>
+        <button class="btn btn-primary" id="burnBtn" disabled><i data-lucide="flame"></i>Download Video with Captions</button>
+      </div>
+      <div class="progress-wrap" id="progressWrap">
+        <div class="progress-label" id="progressLabel">Rendering Video: 0%…</div>
+        <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+      </div>
+    </section>
+  </div>
+</main>
+
+<!-- ================= 20s AD LOCK MODAL ================= -->
+<div class="modal-overlay" id="adModal">
+  <div class="modal">
+    <button class="modal-close" id="modalClose" disabled><i data-lucide="x"></i></button>
+    <h3 id="modalTitle">Unlocking your high-quality download</h3>
+    <p class="sub">Your file is being prepared right now — free forever, no watermark signup.</p>
+    <div class="count-num"><span id="countNum">20</span><small>s</small></div>
+    <div class="ad-box">Advertisement space<br>(AdSense / Interstitial Video Banner)</div>
+    <div class="prep"><div class="spinner"></div><span id="prepText">Preparing your file in the background…</span></div>
+  </div>
+</div>
+
+<div id="toast"></div>
+<footer>CaptionForge runs entirely on your device — no uploads, no accounts, no API keys. Built for Cloudflare Pages & GitHub Pages.</footer>
+
+<script>
+"use strict";
+/* =====================================================================
+   CAPTIONFORGE — single-file, fully client-side caption studio
+   Pipeline: file → <video> → Web Speech API → editable segments
+             → canvas render + MediaRecorder → burned-in WebM/MP4
+===================================================================== */
+
+/* ---------- DOM shortcuts ---------- */
+const $ = id => document.getElementById(id);
+const video = document.createElement('video');   // off-DOM video element (frames drawn onto canvas)
+video.playsInline = true; video.crossOrigin = 'anonymous';
+
+/* ---------- App state ---------- */
+let segments = [];           // [{start, end, text}]
+let style = {                // all sizes are defined at 1080px-width scale
+  font:'Anton', size:58, text:'#ffffff', highlight:'#ffc53d',
+  outline:8, outlineColor:'#000000', bg:'#000000', bgOn:false,
+  pos:'bottom', offset:0, upper:true, karaoke:false, glow:false
+};
+let aspect = '9:16';         // '9:16' | '16:9'
+let videoURL = null, videoReady = false;
+let rendered = null;         // {blob, name} of the burned-in export
+let rendering = false;
+let pendingDownload = null;  // {kind:'srt'|'video'} currently behind the ad gate
+
+/* ---------- Toast ---------- */
+let toastT;
+function toast(msg, err=false){
+  const t = $('toast'); t.textContent = msg; t.className = err ? 'show err' : 'show';
+  clearTimeout(toastT); toastT = setTimeout(()=>t.className='', 3200);
+}
+
+/* =====================================================================
+   1) UPLOAD & VIDEO SOURCE
+===================================================================== */
+const dz = $('dropzone');
+dz.addEventListener('click', ()=> $('fileInput').click());
+dz.addEventListener('dragover', e=>{e.preventDefault(); dz.classList.add('drag');});
+dz.addEventListener('dragleave', ()=> dz.classList.remove('drag'));
+dz.addEventListener('drop', e=>{
+  e.preventDefault(); dz.classList.remove('drag');
+  const f = e.dataTransfer.files[0]; if(f) loadVideoFile(f);
+});
+$('fileInput').addEventListener('change', e=>{ const f = e.target.files[0]; if(f) loadVideoFile(f); });
+
+function loadVideoFile(file){
+  if(!file.type.startsWith('video/')){ toast('Please choose a video file (MP4 / WebM / MOV).', true); return; }
+  if(videoURL) URL.revokeObjectURL(videoURL);
+  videoURL = URL.createObjectURL(file);
+  video.src = videoURL;
+  $('fileChip').style.display = 'flex';
+  $('fileName').textContent = file.name;
+  $('fileMeta').textContent = (file.size/1048576).toFixed(1) + ' MB · ' + file.type || 'video';
+}
+
+video.addEventListener('loadedmetadata', ()=>{
+  videoReady = true;
+  $('fileMeta').textContent += ' · ' + fmtTime(video.duration);
+  $('longWarn').style.display = video.duration > 95 ? 'block' : 'none';
+  $('playBtn').disabled = false; $('seekBar').disabled = false;
+  $('recBtn').disabled = !srSupported; $('addRowBtn').disabled = false;
+  $('srtBtn').disabled = false; $('burnBtn').disabled = false;
+  video.currentTime = 0;
+  toast('Video loaded. Ready to transcribe!');
+});
+video.addEventListener('error', ()=> toast('Could not decode this video in your browser. Try MP4 (H.264).', true));
+
+/* Play / pause + seek bar + time display */
+$('playBtn').addEventListener('click', togglePlay);
+function togglePlay(){
+  if(!videoReady) return;
+  if(video.paused){ video.play(); } else { video.pause(); }
+}
+video.addEventListener('play',  ()=> $('playBtn').innerHTML = iconSVG('pause'));
+video.addEventListener('pause', ()=> $('playBtn').innerHTML = iconSVG('play'));
+video.addEventListener('timeupdate', ()=>{
+  if(!seeking) $('seekBar').value = video.currentTime;
+  $('timeDisplay').textContent = fmtTime(video.currentTime) + ' / ' + fmtTime(video.duration||0);
+});
+let seeking = false;
+$('seekBar').addEventListener('input', ()=>{ seeking = true; video.currentTime = +$('seekBar').value; });
+$('seekBar').addEventListener('change', ()=> seeking = false);
+
+/* Aspect toggle: resizes the preview canvas; export resolution matches */
+$('aspectV').addEventListener('click', ()=> setAspect('9:16'));
+$('aspectH').addEventListener('click', ()=> setAspect('16:9'));
+function setAspect(a){
+  aspect = a;
+  $('aspectV').classList.toggle('on', a==='9:16');
+  $('aspectH').classList.toggle('on', a==='16:9');
+  const pc = $('previewCanvas');
+  if(a==='9:16'){ pc.width = 540; pc.height = 960; } else { pc.width = 960; pc.height = 540; }
+}
+
+/* Small helper to swap lucide icons inside the play button */
+function iconSVG(name){
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">${
+    name==='play' ? '<polygon points="6 3 20 12 6 21 6 3" fill="currentColor" stroke="none"/>'
+                  : '<rect x="5" y="4" width="4.5" height="16" rx="1" fill="currentColor" stroke="none"/><rect x="14.5" y="4" width="4.5" height="16" rx="1" fill="currentColor" stroke="none"/>'}</svg>`;
+}
+function fmtTime(t){
+  t = Math.max(0, t||0);
+  const m = Math.floor(t/60), s = Math.floor(t%60);
+  return m + ':' + String(s).padStart(2,'0');
+}
+
+/* =====================================================================
+   2) SPEECH RECOGNITION (Web Speech API)
+===================================================================== */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+const srSupported = !!SR;
+if(!srSupported) $('srFallback').style.display = 'block';
+
+let recognition = null, listening = false, pendingStart = null;
+
+$('recBtn').addEventListener('click', ()=>{
+  if(listening) stopListening(); else startListening();
+});
+
+function startListening(){
+  if(!videoReady){ toast('Load a video first.', true); return; }
+  recognition = new SR();
+  recognition.lang = $('langSelect').value;
+  recognition.continuous = true;
+  recognition.interimResults = true;
+
+  /* Each final phrase becomes a timed segment; interim marks the phrase start */
+  recognition.onresult = e => {
+    for(let i = e.resultIndex; i < e.results.length; i++){
+      const r = e.results[i];
+      if(r.isFinal){
+        const text = r[0].transcript.trim();
+        if(text){
+          const end = video.currentTime;
+          const start = Math.max(0, pendingStart !== null ? pendingStart : end - 2);
+          segments.push({start: Math.min(start, end), end: Math.max(end, start + 0.6), text});
+          pendingStart = null;
+          renderSubList();
+        }
+      } else {
+        if(pendingStart === null) pendingStart = video.currentTime;
+        $('liveStatus').innerHTML = '<span class="rec-dot"></span>Listening… "' + r[0].transcript + '"';
+      }
+    }
+  };
+  recognition.onend = () => { if(listening) recognition.start(); }; // auto-restart on silence gaps
+  recognition.onerror = ev => {
+    if(ev.error === 'not-allowed') { toast('Microphone / audio permission denied.', true); stopListening(); }
+    else if(ev.error !== 'no-speech' && ev.error !== 'aborted') $('liveStatus').textContent = '(' + ev.error + ')';
+  };
+
+  try{ recognition.start(); }catch(_){}
+  listening = true;
+  $('recBtn').innerHTML = iconSquare('square') + '<span>Stop Transcription</span>';
+  $('liveStatus').innerHTML = '<span class="rec-dot"></span>Waiting for speech… press Play on the video.';
+}
+
+function stopListening(){
+  listening = false;
+  if(recognition) try{ recognition.stop(); }catch(_){}
+  $('recBtn').innerHTML = iconSquare('mic') + '<span>Start Transcription</span>';
+  $('liveStatus').textContent = 'Transcription stopped. Review & edit the captions below.';
+  renderSubList();
+}
+/* Minimal square stroke icons for the rec button */
+function iconSquare(name){
+  const d = name==='mic'
+    ? '<path d="M12 2a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z"/><path d="M19 10v1a7 7 0 0 1-14 0v-1"/><line x1="12" y1="18" x2="12" y2="22"/>'
+    : '<rect x="6" y="6" width="12" height="12" rx="1" fill="currentColor" stroke="none"/>';
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+}
+
+/* =====================================================================
+   3) SUBTITLE EDITOR
+===================================================================== */
+function renderSubList(){
+  const list = $('subList');
+  list.innerHTML = '';
+  if(!segments.length){
+    list.innerHTML = '<div class="empty-list">No captions yet — transcribe the video or click "Add caption at playhead".</div>';
+    $('subCount').textContent = '';
+    return;
+  }
+  segments.sort((a,b)=>a.start-b.start);
+  segments.forEach((seg, i)=>{
+    const row = document.createElement('div');
+    row.className = 'sub-row';
+    row.innerHTML = `
+      <input class="t" type="text" value="${fmtSrtTime(seg.start).slice(0,11).replace(',','.')}" title="Click to jump">
+      <input class="t" type="text" value="${fmtSrtTime(seg.end).slice(0,11).replace(',','.')}" title="End time">
+      <textarea rows="2"></textarea>
+      <button class="mini split" title="Split into 2–3 word chunks (Reels style)"><i data-lucide="scissors"></i></button>
+      <button class="mini del" title="Delete"><i data-lucide="trash-2"></i></button>`;
+    const [startIn, endIn, ta] = row.children;
+    ta.value = seg.text;
+    /* Jump-to-time on timestamp click */
+    startIn.addEventListener('click', ()=>{ video.currentTime = seg.start; if(video.paused) togglePlay(); });
+    endIn.addEventListener('click', ()=>{ video.currentTime = Math.max(0, seg.end - 0.2); });
+    /* Edits update state live */
+    startIn.addEventListener('change', ()=>{ const v = parseTime(startIn.value); if(v!==null) seg.start = v; startIn.value = fmtSrtTime(seg.start).replace(',','.').slice(0,11); });
+    endIn.addEventListener('change',  ()=>{ const v = parseTime(endIn.value);  if(v!==null) seg.end  = v; endIn.value  = fmtSrtTime(seg.end ).replace(',','.').slice(0,11); });
+    ta.addEventListener('input', ()=>{ seg.text = ta.value; });
+    row.querySelector('.split').addEventListener('click', ()=> splitSegment(i));
+    row.querySelector('.del').addEventListener('click', ()=>{ segments.splice(i,1); renderSubList(); });
+    list.appendChild(row);
+  });
+  $('subCount').textContent = segments.length + ' caption' + (segments.length===1?'':'s');
+  lucide.createIcons();
+}
+function parseTime(str){
+  const m = str.trim().match(/^(?:(\d+):)?(\d+(?:\.\d+)?)$/);
+  if(!m) return null;
+  return (m[1] ? +m[1]*60 : 0) + parseFloat(m[2]);
+}
+$('addRowBtn').addEventListener('click', ()=>{
+  if(!videoReady) return;
+  segments.push({start: video.currentTime, end: video.currentTime + 2, text:'New caption'});
+  renderSubList();
+});
+
+/* Split a long chunk into 2–3 word mini-chunks with proportional timing */
+function splitSegment(i){
+  const seg = segments[i];
+  const words = seg.text.trim().split(/\s+/).filter(Boolean);
+  if(words.length <= 3){ toast('This caption is already short enough.'); return; }
+  const chunks = [];
+  for(let w = 0; w < words.length; w += 3){
+    let size = Math.min(3, words.length - w);
+    if(words.length - w === 4) size = 2;      // avoid a lonely 1-word tail
+    chunks.push(words.slice(w, w + size).join(' '));
+  }
+  const dur = Math.max(0.4, seg.end - seg.start);
+  const per = dur / chunks.length;
+  const newSegs = chunks.map((c, k)=>({start: seg.start + k*per, end: seg.start + (k+1)*per, text: c}));
+  segments.splice(i, 1, ...newSegs);
+  renderSubList();
+  toast('Split into ' + chunks.length + ' punchy chunks.');
+}
+
+/* =====================================================================
+   4) CAPTION RENDERER (shared by live preview AND export canvas)
+===================================================================== */
+function activeSegment(t){ return segments.find(s => t >= s.start && t < s.end) || null; }
+
+/* Word-wrap helper: breaks text into lines that fit maxW */
+function wrapLines(ctx, words, maxW){
+  const lines = []; let line = [];
+  for(const w of words){
+    const test = line.length ? line.join(' ') + ' ' + w : w;
+    if(ctx.measureText(test).width > maxW && line.length){ lines.push(line); line = [w]; }
+    else line.push(w);
+  }
+  if(line.length) lines.push(line);
+  return lines;
+}
+
+/* Draws one caption block centered per style; scale s maps 1080-space → canvas px */
+function drawCaption(ctx, t, W, H){
+  const seg = activeSegment(t);
+  if(!seg || !seg.text.trim()) return;
+  const s = W / 1080;
+  const fs = style.size * s;
+  ctx.font = `${fs}px "${style.font}", Impact, sans-serif`;
+  ctx.textBaseline = 'middle';
+  ctx.lineJoin = 'round'; ctx.miterLimit = 2;
+
+  const text = style.upper ? seg.text.toUpperCase() : seg.text;
+  const words = text.split(/\s+/);
+  const lines = wrapLines(ctx, words, W * 0.84);
+  const lineH = fs * 1.18;
+  const totalH = lines.length * lineH;
+
+  /* Vertical anchor + fine offset */
+  const anchor = style.pos === 'bottom' ? H * 0.82 : style.pos === 'top' ? H * 0.16 : H * 0.5;
+  const baseY = anchor + style.offset * s;
+
+  /* Total word index for karaoke timing */
+  const totalWords = words.length;
+  const activeIdx = style.karaoke
+    ? Math.min(totalWords - 1, Math.floor((t - seg.start) / Math.max(0.01, seg.end - seg.start) * totalWords))
+    : -1;
+
+  if(style.glow){ ctx.shadowColor = style.highlight; ctx.shadowBlur = fs * 0.35; }
+
+  let wordIdx = 0;
+  lines.forEach((line, li)=>{
+    const y = baseY - totalH/2 + lineH*(li + 0.5);
+    /* measure line, then draw word by word so karaoke can color one word */
+    const spaceW = ctx.measureText(' ').width;
+    const widths = line.map(w => ctx.measureText(w).width);
+    const lineW = widths.reduce((a,b)=>a+b,0) + spaceW*(line.length-1);
+    let x = (W - lineW)/2;
+
+    /* background box behind this line */
+    if(style.bgOn){
+      const pad = fs * 0.32;
+      ctx.fillStyle = style.bg;
+      ctx.beginPath();
+      ctx.roundRect(x - pad, y - lineH/2, lineW + pad*2, lineH, fs*0.18);
+      ctx.fill();
+    }
+    line.forEach((w, wi)=>{
+      const isHi = wordIdx === activeIdx;
+      ctx.textAlign = 'left';
+      if(style.outline > 0){
+        ctx.lineWidth = style.outline * s;
+        ctx.strokeStyle = isHi ? style.highlight : style.outlineColor;
+        ctx.strokeText(w, x, y);
+      }
+      ctx.fillStyle = isHi ? style.highlight : style.text;
+      ctx.fillText(w, x, y);
+      x += widths[wi] + spaceW;
+      wordIdx++;
+    });
+  });
+  ctx.shadowBlur = 0;
+}
+
+/* Draw the video frame letterboxed ("contain") into a canvas, then captions */
+function drawFrame(ctx, W, H){
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, W, H);
+  if(videoReady && video.videoWidth){
+    const vr = video.videoWidth / video.videoHeight, cr = W / H;
+    let dw, dh;
+    if(vr > cr){ dw = W; dh = W / vr; } else { dh = H; dw = H * vr; }
+    ctx.drawImage(video, (W - dw)/2, (H - dh)/2, dw, dh);
+  }
+  drawCaption(ctx, video.currentTime || 0, W, H);
+}
+
+/* Live preview loop: keeps redrawing even when paused */
+const pctx = $('previewCanvas').getContext('2d');
+(function previewLoop(){
+  const pc = $('previewCanvas');
+  drawFrame(pctx, pc.width, pc.height);
+  requestAnimationFrame(previewLoop);
+})();
+
+/* =====================================================================
+   5) STYLE STUDIO WIRING
+===================================================================== */
+const stMap = {
+  stFont:['font','value'], stSize:['size','num'], stText:['text','color'], stHighlight:['highlight','color'],
+  stOutline:['outline','num'], stOutlineColor:['outlineColor','color'], stBg:['bg','color'],
+  stBgOn:['bgOn','bool'], stPos:['pos','value'], stOffset:['offset','num'],
+  stUpper:['upper','bool'], stKaraoke:['karaoke','bool'], stGlow:['glow','bool']
+};
+for(const [id, [key, kind]] of Object.entries(stMap)){
+  const el = $(id);
+  const ev = (el.type === 'range' || el.type === 'checkbox') ? 'input' : 'input';
+  el.addEventListener(ev, ()=>{
+    style[key] = kind==='num' ? +el.value : kind==='bool' ? el.checked : el.value;
+    syncStyleLabels();
+  });
+}
+function syncStyleLabels(){
+  $('stSizeVal').textContent = style.size + 'px';
+  $('stOutlineVal').textContent = style.outline === 0 ? 'off' : style.outline;
+  $('stOffsetVal').textContent = (style.offset > 0 ? '+' : '') + style.offset;
+  $('stTextHex').textContent = style.text;
+  $('stHighlightHex').textContent = style.highlight;
+  $('stOutlineColorHex').textContent = style.outlineColor;
+}
+syncStyleLabels();
+
+/* Presets — one click reconfigures the whole look */
+const PRESETS = {
+  classic:{ font:'Anton', size:58, text:'#ffffff', highlight:'#ffc53d', outline:8, outlineColor:'#000000',
+            bgOn:false, pos:'bottom', offset:0, upper:true, karaoke:false, glow:false },
+  neon:{ font:'Anton', size:60, text:'#ffffff', highlight:'#00e5ff', outline:0, outlineColor:'#000000',
+         bgOn:false, pos:'middle', offset:40, upper:true, karaoke:false, glow:true },
+  karaoke:{ font:'Anton', size:64, text:'#ffffff', highlight:'#ffe23d', outline:6, outlineColor:'#000000',
+            bgOn:true, bg:'#000000', pos:'bottom', offset:0, upper:true, karaoke:true, glow:false }
+};
+document.querySelectorAll('.presets button').forEach(b=>{
+  b.addEventListener('click', ()=>{
+    Object.assign(style, PRESETS[b.dataset.preset]);
+    /* reflect state back into the controls */
+    $('stFont').value = style.font; $('stSize').value = style.size; $('stText').value = style.text;
+    $('stHighlight').value = style.highlight; $('stOutline').value = style.outline;
+    $('stOutlineColor').value = style.outlineColor; $('stBg').value = style.bg;
+    $('stBgOn').checked = style.bgOn; $('stPos').value = style.pos; $('stOffset').value = style.offset;
+    $('stUpper').checked = style.upper; $('stKaraoke').checked = style.karaoke; $('stGlow').checked = style.glow;
+    syncStyleLabels();
+  });
+});
+
+/* =====================================================================
+   6) SRT EXPORT
+===================================================================== */
+function fmtSrtTime(t){
+  t = Math.max(0, t);
+  const h = Math.floor(t/3600), m = Math.floor(t%3600/60), s = Math.floor(t%60), ms = Math.floor((t%1)*1000);
+  return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')},${String(ms).padStart(3,'0')}`;
+}
+function buildSRT(){
+  if(!segments.length) return null;
+  return segments.map((s,i)=>`${i+1}\n${fmtSrtTime(s.start)} --> ${fmtSrtTime(s.end)}\n${s.text.trim()}\n`).join('\n');
+}
+
+/* =====================================================================
+   7) VIDEO HARD-CODING ENGINE (canvas + MediaRecorder + Web Audio)
+===================================================================== */
+let audioCtx = null, audioDest = null, mediaSrc = null;
+
+function ensureAudioGraph(){
+  /* Route the <video> element's audio into a MediaStream we can mux with the canvas */
+  if(!audioCtx){
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    mediaSrc = audioCtx.createMediaElementSource(video);
+    audioDest = audioCtx.createMediaStreamDestination();
+    mediaSrc.connect(audioDest);
+    mediaSrc.connect(audioCtx.destination); // keep audio audible during render
+  }
+  if(audioCtx.state === 'suspended') audioCtx.resume();
+}
+
+function pickMime(){
+  const candidates = [
+    'video/mp4;codecs="avc1.42E01E,mp4a.40.2"',  // Chrome 126+ can record MP4
+    'video/mp4',
+    'video/webm;codecs=vp9,opus',
+    'video/webm;codecs=vp8,opus',
+    'video/webm'
+  ];
+  return candidates.find(c => MediaRecorder.isTypeSupported(c)) || '';
+}
+
+function renderVideo(){
+  return new Promise((resolve, reject)=>{
+    if(!videoReady || !segments.length){ reject('Nothing to render.'); return; }
+    if(rendering){ reject('A render is already running.'); return; }
+    rendering = true;
+    rendered = null;
+
+    const W = aspect === '9:16' ? 1080 : 1920;
+    const H = aspect === '9:16' ? 1920 : 1080;
+    const c = document.createElement('canvas');
+    c.width = W; c.height = H;
+    const cx = c.getContext('2d');
+
+    ensureAudioGraph();
+    const stream = c.captureStream(30);
+    audioDest.stream.getAudioTracks().forEach(t => stream.addTrack(t));
+
+    const mime = pickMime();
+    const rec = new MediaRecorder(stream, { mimeType: mime || undefined, videoBitsPerSecond: 8_000_000 });
+    const chunks = [];
+    rec.ondataavailable = e => { if(e.data.size) chunks.push(e.data); };
+    rec.onstop = () => {
+      rendering = false;
+      const ext = mime.includes('mp4') ? 'mp4' : 'webm';
+      rendered = { blob: new Blob(chunks, {type: mime || 'video/webm'}), name: 'captioned-video.' + ext };
+      $('progressLabel').textContent = 'Render complete ✓';
+      $('progressFill').style.width = '100%';
+      resolve(rendered);
+    };
+    rec.onerror = () => { rendering = false; reject('Recorder error.'); };
+
+    /* Play from the top, drawing frames each animation tick */
+    video.currentTime = 0;
+    video.play().then(()=>{
+      rec.start(250);
+      (function loop(){
+        drawFrame(cx, W, H);
+        const p = Math.min(100, Math.round(video.currentTime / (video.duration || 1) * 100));
+        $('progressWrap').style.display = 'block';
+        $('progressLabel').textContent = 'Rendering Video: ' + p + '%…';
+        $('progressFill').style.width = p + '%';
+        if(video.ended || video.currentTime >= video.duration - 0.03){
+          video.pause();
+          setTimeout(()=> rec.state !== 'inactive' && rec.stop(), 120); // flush last frames
+        } else {
+          requestAnimationFrame(loop);
+        }
+      })();
+    }).catch(()=>{ rendering = false; reject('Playback blocked — press play once first.'); });
+  });
+}
+
+/* =====================================================================
+   8) 20-SECOND AD LOCK MODAL + DOWNLOAD GATE + CONFETTI
+===================================================================== */
+const modal = $('adModal');
+let countdownInt = null;
+
+$('srtBtn').addEventListener('click', ()=>{
+  if(!buildSRT()){ toast('Add at least one caption first.', true); return; }
+  openGate('srt');
+});
+$('burnBtn').addEventListener('click', ()=>{
+  if(!segments.length){ toast('Add captions before burning them in.', true); return; }
+  openGate('video');
+});
+
+function openGate(kind){
+  pendingDownload = kind;
+  modal.classList.add('show');
+  $('modalClose').disabled = true;
+  $('prepText').textContent = kind === 'srt' ? 'Generating .SRT subtitle file…' : 'Rendering your captioned video in the background…';
+  $('progressWrap').style.display = kind === 'video' ? 'block' : 'none';
+  $('progressFill').style.width = '0%';
+
+  /* Kick off the actual work in the background while the ad shows */
+  let work;
+  if(kind === 'srt'){
+    work = Promise.resolve({ blob: new Blob([buildSRT()], {type:'text/plain;charset=utf-8'}), name:'captions.srt' });
+  } else {
+    work = renderVideo().catch(err => { toast(String(err), true); throw err; });
+  }
+
+  /* 20-second countdown; the X stays locked until it hits zero */
+  let remaining = 20;
+  $('countNum').textContent = remaining;
+  countdownInt = setInterval(()=>{
+    remaining--;
+    $('countNum').textContent = Math.max(0, remaining);
+    if(remaining <= 0){
+      clearInterval(countdownInt);
+      $('modalClose').disabled = false;
+      /* Deliver the file the moment both timer AND preparation finish */
+      work.then(file => { deliverDownload(file); }).catch(()=> closeModal());
+    }
+  }, 1000);
+}
+
+function deliverDownload(file){
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(file.blob);
+  a.download = file.name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=> URL.revokeObjectURL(a.href), 5000);
+  $('prepText').textContent = 'Your file is downloading now. Enjoy!';
+  /* Confetti celebration */
+  confetti({ particleCount: 130, spread: 80, origin: {y: .6}, colors: ['#ffc53d','#ffffff','#57d98a'] });
+  setTimeout(()=> confetti({ particleCount: 80, angle: 60, spread: 60, origin: {x: 0} }), 300);
+  setTimeout(()=> confetti({ particleCount: 80, angle: 120, spread: 60, origin: {x: 1} }), 500);
+  setTimeout(closeModal, 1800);
+}
+
+function closeModal(){
+  modal.classList.remove('show');
+  clearInterval(countdownInt);
+}
+$('modalClose').addEventListener('click', ()=>{ if(!$('modalClose').disabled) closeModal(); });
+
+/* =====================================================================
+   INIT
+===================================================================== */
+lucide.createIcons();
+renderSubList();
+setAspect('9:16');
+</script>
+</body>
+</html>
